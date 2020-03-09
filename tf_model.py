@@ -299,13 +299,9 @@ class NN_force(object):
     def save_model(
         self,
         path,
-        step,
         ):
-        pckl_name = str(step)+'.pckl'
+        pckl_name = 'model.pckl'
         path_plus_name = path+'/'+pckl_name
-        sp.call(['rm -rf old-'+path_plus_name], shell=True)
-        sp.call(['mkdir -p old-'+path], shell=True)
-        sp.call(['mv '+path_plus_name+' old-'+path_plus_name], shell=True)
         sp.call(['mkdir -p '+path], shell=True)
         with open(path_plus_name, 'wb') as f:
             del(self.log)
@@ -366,7 +362,7 @@ class NN_force(object):
         self,
         X,
         X_deriv,
-        neigh_ind,
+        Neigh_ind,
         OL,
         len_inp,
         len_atoms,
@@ -390,10 +386,10 @@ class NN_force(object):
             # )
 
         ## New version
-        # Reorder neigh_ind
+        # Reorder Neigh_ind
         #--> shape of (num_batch, len_atoms, num_cutoff)
-        neigh_ind = tf.concat(
-            [tf.reshape(neigh_ind[spec], [-1, type_count[spec], self.dscrptr.num_cutoff]) for spec in self.dscrptr.type_unique],
+        Neigh_ind = tf.concat(
+            [tf.reshape(Neigh_ind[spec], [-1, type_count[spec], self.dscrptr.num_cutoff]) for spec in self.dscrptr.type_unique],
             axis=1,
             )
 
@@ -417,10 +413,10 @@ class NN_force(object):
             tf.expand_dims(
                 tf.equal(
                     tf.tile(
-                        tf.expand_dims(neigh_ind, axis=1),
+                        tf.expand_dims(Neigh_ind, axis=1),
                         [1,len_atoms,1,1],
                         ),
-                    np.arange(len_atoms).reshape(1,-1,1,1),
+                    tf.reshape(tf.range(len_atoms), [1,-1,1,1]),
                     ),
                 axis=4,
                 ),
@@ -451,7 +447,7 @@ class NN_force(object):
         # f_cross = []
         # for a in range(len_atoms):
             # #--> shape of (num_batch, len_atoms, num_cutoff, 3)
-            # a_bool = tf.tile(tf.expand_dims(tf.equal(neigh_ind, a), axis=3), [1,1,1,3])
+            # a_bool = tf.tile(tf.expand_dims(tf.equal(Neigh_ind, a), axis=3), [1,1,1,3])
 
                         # #  --> shape of (num_batch, 3)
             # f_cross.append(tf.reduce_sum(
@@ -465,7 +461,7 @@ class NN_force(object):
                             # # tf.zeros_like(F_ij),
                             # # ),
                         # # #--> shape of (num_batch, num_cutoff)
-                        # # neigh_ind[:, a],
+                        # # Neigh_ind[:, a],
                         # # ),
                     # tf.where(
                         # a_bool,
@@ -485,7 +481,7 @@ class NN_force(object):
         self,
         X,
         X_deriv,
-        neigh_ind,
+        Neigh_ind,
         OL,
         F_hat,
         len_inp,
@@ -505,7 +501,7 @@ class NN_force(object):
             self.get_F(
                 X,
                 X_deriv,
-                neigh_ind,
+                Neigh_ind,
                 OL,
                 len_inp,
                 len_atoms,
@@ -603,7 +599,6 @@ class NN_force(object):
         self,
         ):
         dtype            = self.dtype
-        log              = self.log
         dscrptr          = self.dscrptr
         hl_node_num_list = self.hl_node_num_list
         len_filter_list  = self.len_filter_list
@@ -614,15 +609,13 @@ class NN_force(object):
         n_inp_channel    = self.n_inp_channel
         len_out          = self.len_out
 
-        log('Constructing NN...'.center(120))
-
         X         = []
         X_deriv   = []
-        neigh_ind = []
+        Neigh_ind = []
         HL        = []
         OL        = []
         F         = []
-        DR = tf.placeholder(dtype)
+        DR = tf.placeholder(dtype, name='DR')
 
         for spec in self.dscrptr.type_unique:
             if self.model == 'ResNet':
@@ -661,12 +654,12 @@ class NN_force(object):
 
             X        .append(X_tmp)
             OL       .append(OL_tmp)
-            neigh_ind.append(tf.placeholder('int32'))
-            X_deriv  .append(tf.placeholder(dtype))
-            F        .append(tf.placeholder(dtype))
-        E = tf.placeholder(dtype)
+            Neigh_ind.append(tf.placeholder('int32', name='Neigh_ind_'+str(spec)))
+            X_deriv  .append(tf.placeholder(dtype, name='X_deriv_'+str(spec)))
+            F        .append(tf.placeholder(dtype, name='F_'+str(spec)))
+        E = tf.placeholder(dtype, name='E')
 
-        return X, X_deriv, neigh_ind, OL, F, E, DR
+        return X, X_deriv, Neigh_ind, OL, F, E, DR
 
     def train_f(
         self,
@@ -814,7 +807,7 @@ class NN_force(object):
         # Build model
         log('=============================================================================================='.center(120))
         log('>>>>>>>>>>>>>>>>>>>>>>>>>>>      Constructing the NN model       <<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.center(120))
-        X, X_deriv, neigh_ind, OL, F, E, DR = self.build_nn()
+        X, X_deriv, Neigh_ind, OL, F, E, DR = self.build_nn()
         log('>>>>>>>>>>>>>>>>>>>>>>>>>>>        Construction complete!        <<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.center(120))
         log('=============================================================================================='.center(120))
 
@@ -827,7 +820,7 @@ class NN_force(object):
 
         #### Loss functions & RMSEs
         e_rmse    = self.get_E_RMSE(OL, E, len_atoms, type_count)
-        f_rmse    = self.get_F_RMSE(X, X_deriv, neigh_ind, OL, F, len_inp, len_atoms, type_count)
+        f_rmse    = self.get_F_RMSE(X, X_deriv, Neigh_ind, OL, F, len_inp, len_atoms, type_count)
         # loss    = tf.add_n([
             # e_ratio * e_rmse,
             # f_ratio * f_rmse,
@@ -889,6 +882,10 @@ class NN_force(object):
             log('Initializing TF...', tic='init', no_space=True)
             sess.run(tf.global_variables_initializer())
             log('Initialization complete!', toc='init', no_space=True)
+            # Save model
+            log('Saving model...', tic='init', no_space=True)
+            self.save_model(self.save_path)
+            log('Model saved!', toc='init', no_space=True)
 
         #### tensorboard
         # writer = tf.summary.FileWriter('./board/sample_1', sess.graph)
@@ -980,7 +977,7 @@ class NN_force(object):
                     loss,
                     feed_dict = {A:B for A,B in list(zip(X        , valid_fgpts_spec      )) \
                                               + list(zip(X_deriv  , valid_fgpts_deriv_spec)) \
-                                              + list(zip(neigh_ind, valid_neigh_ind_spec  )) \
+                                              + list(zip(Neigh_ind, valid_neigh_ind_spec  )) \
                                               +     [   (E        , valid_e               )] \
                                               + list(zip(F        , valid_f_spec          )) \
                                               +     [   (DR       , dropout_rate          )]},
@@ -989,7 +986,7 @@ class NN_force(object):
                     loss,
                     feed_dict = {A:B for A,B in list(zip(X        , valid_fgpts_spec      )) \
                                               + list(zip(X_deriv  , valid_fgpts_deriv_spec)) \
-                                              + list(zip(neigh_ind, valid_neigh_ind_spec  )) \
+                                              + list(zip(Neigh_ind, valid_neigh_ind_spec  )) \
                                               +     [   (E        , valid_e               )] \
                                               + list(zip(F        , valid_f_spec          )) \
                                               +     [   (DR       , 1.0                   )]},
@@ -1015,7 +1012,7 @@ class NN_force(object):
                     f_rmse,
                     feed_dict = {A:B for A,B in list(zip(X        , valid_fgpts_spec      )) \
                                               + list(zip(X_deriv  , valid_fgpts_deriv_spec)) \
-                                              + list(zip(neigh_ind, valid_neigh_ind_spec  )) \
+                                              + list(zip(Neigh_ind, valid_neigh_ind_spec  )) \
                                               +     [   (E        , valid_e               )] \
                                               + list(zip(F        , valid_f_spec          )) \
                                               +     [   (DR       , 1.0                   )]},
@@ -1069,7 +1066,7 @@ class NN_force(object):
                     [loss, do_train],
                     feed_dict={A:B for A,B in list(zip(X        , batch_fgpts_i      )) \
                                             + list(zip(X_deriv  , batch_fgpts_deriv_i)) \
-                                            + list(zip(neigh_ind, batch_neigh_ind_i  )) \
+                                            + list(zip(Neigh_ind, batch_neigh_ind_i  )) \
                                             +     [   (E        , batch_e_i          )] \
                                             + list(zip(F        , batch_f_i          )) \
                                             +     [   (DR       , dropout_rate       )]},

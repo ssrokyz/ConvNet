@@ -16,20 +16,34 @@ class ss_calc(Calculator, object):
         var_ckpt,
         label='ss_calc',
         atoms=None,
+        log_f='log.txt',
         ):
         """
-        model (object) - Object of one of these classes: (NN_force, )
+        model (str or object)
+            - (str)    Path to the saved model in pickle format.
+            - (object) Object of one of these classes: (NN_force, ). Must have same training parameters used to make the var_ckpt file.
         var_ckpt (str) - Tensorflow variables checkpoint file.
         """
 
         # Initialize
         Calculator.__init__(self, label=label, atoms=atoms)
 
-        # Global variables
-        self.model = model
+        ## Global variables
+        # Logger
+        from ss_util import Logger
+
+        # Model
+        if isinstance(model, str):
+            import pickle as pckl
+            with open(model, 'rb') as _:
+                self.model = pckl.load(_)
+        else:
+            self.model = model
+        self.model.log = Logger(log_f)
+        self.model.dscrptr.log = model.log
 
         # Build an NN
-        self.X, self.X_deriv, HL, self.OL, F_hat, E_hat, DR = model.build_nn()
+        self.X, self.X_deriv, self.Neigh_ind, self.OL, F_hat, E_hat, self.DR = model.build_nn()
         # self.E = self.get_energy_tensor()
         self.F = self.get_force_tensor()
 
@@ -46,17 +60,73 @@ class ss_calc(Calculator, object):
         # return E
 
     def get_force_tensor(self):
-        F = 2. * tf.matmul(
-            tf.reshape(tf.concat(
-                self.X_deriv,
-                axis=0,
-                ), [-1,3,self.model.dscrptr.len_fgpt]),
-            tf.reshape(tf.concat(
-                [tf.gradients(self.OL[spec], self.X[spec])[0] for spec in self.model.dscrptr.type_unique],
-                axis=0,
-                ), [-1,self.model.dscrptr.len_fgpt,1]),
+        """
+        """
+        # Reorder Neigh_ind
+        #--> shape of (len_atoms, num_cutoff)
+        Neigh_ind = tf.concat(self.Neigh_ind, axis=0)
+
+        # Calc F_ij
+        F_ij = []
+        for spec in self.model.dscrptr.type_unique:
+            F_ij.append(tf.reshape(tf.matmul(
+                tf.reshape(self.X_deriv[spec], [-1, 3, self.model.dscrptr.len_dscrptr]),
+                tf.reshape(tf.gradients(self.OL[spec], self.X[spec])[0], [-1, self.model.dscrptr.len_dscrptr, 1]),
+                ), [-1, self.model.dscrptr.num_cutoff, 3]))
+        #--> shape of (len_atoms, num_cutoff, 3)
+        F_ij = tf.concat(F_ij, axis=0)
+
+        # First (self) term of forces.
+        #--> shape of (num_batch, len_atoms, 3)
+        f_self = -tf.reduce_sum(F_ij, axis=1)
+
+        # Second (cross) term of forces.
+        len_atoms = tf.shape(F_ij)[0]
+        a_bool = tf.tile(
+            tf.expand_dims(
+                tf.equal(
+                    tf.tile(
+                        tf.expand_dims(Neigh_ind, axis=0),
+                        [len_atoms,1,1],
+                        ),
+                    tf.reshape(tf.range(len_atoms),[len_atoms,1,1]),
+                    ),
+                axis=3,
+                ),
+            [1,1,1,3],
             )
-        return tf.reshape(F, [-1, 3])
+
+        f_cross = tf.reduce_sum(
+            tf.reshape(
+                tf.where(
+                    a_bool,
+                    tf.tile(
+                        tf.expand_dims(
+                            F_ij,
+                            axis=0,
+                            ),
+                        [len_atoms,1,1,1],
+                        ),
+                    tf.zeros_like(a_bool, dtype=F_ij.dtype),
+                    ),
+                [len_atoms, len_atoms *self.model.dscrptr.num_cutoff, 3],
+                ),
+            axis= 1,
+            )
+
+        return tf.reshape(f_self + f_cross, [-1, 3])
+
+        # F = 2. * tf.matmul(
+            # tf.reshape(tf.concat(
+                # self.X_deriv,
+                # axis=0,
+                # ), [-1,3,self.model.dscrptr.len_fgpt]),
+            # tf.reshape(tf.concat(
+                # [tf.gradients(self.OL[spec], self.X[spec])[0] for spec in self.model.dscrptr.type_unique],
+                # axis=0,
+                # ), [-1,self.model.dscrptr.len_fgpt,1]),
+            # )
+        # return tf.reshape(F, [-1, 3])
 
     def calculate(
         self,
@@ -72,18 +142,19 @@ class ss_calc(Calculator, object):
         Calculator.calculate(self, atoms, properties, system_changes)
 
         # Get fgpt and fgpt derivative.
-        fgpt, fgpt_deriv, types, types_chem = self.model.dscrptr.gen_fgpts([atoms]) 
+        fgpt, fgpt_deriv, neigh_ind, types, types_chem = self.model.dscrptr.gen_fgpts([atoms]) 
 
         # You have only one image here. Remove outmost shell.
         fgpt       = fgpt[0]
         fgpt_deriv = fgpt_deriv[0]
+        neigh_ind  = neigh_ind[0]
 
         # Reshape.
         (len_atoms, num_cutoff, len_dscrptr) = fgpt.shape
 
         len_fgpt   = num_cutoff * len_dscrptr
         fgpt       = fgpt.reshape([len_atoms, len_fgpt])
-        fgpt_deriv = fgpt_deriv.reshape([len_atoms, 3, len_fgpt])
+        fgpt_deriv = fgpt_deriv.reshape([len_atoms, num_cutoff, 3, len_dscrptr])
 
         # Defind some variables.
         type_unique, type_count = np.unique(types, return_counts=True)
@@ -91,8 +162,10 @@ class ss_calc(Calculator, object):
         # Calculate energy and forces.
         (atomic_energies_not_in_order, forces_not_in_order) = self.sess.run(
             (self.OL, self.F),
-            feed_dict={A:B for A,B in list(zip(self.X, [fgpt[types == spec] for spec in type_unique])) \
-                                    + list(zip(self.X_deriv, [fgpt_deriv[types == spec] for spec in type_unique]))},
+            feed_dict={A:B for A,B in list(zip(self.X,         [fgpt[types == spec] for spec in type_unique])) \
+                                    + list(zip(self.X_deriv,   [fgpt_deriv[types == spec] for spec in type_unique])) \
+                                    + list(zip(self.Neigh_ind, [neigh_ind[types == spec] for spec in type_unique])) \
+                                    +     [   [self.DR,        1.0]]},
             )
 
         # Concate wrt species.

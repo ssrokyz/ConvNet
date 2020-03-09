@@ -223,6 +223,7 @@ class vector(object):
         rot_mat    = []
         max_radi   = []
         for i in range(len_alist):
+            x3_coord_i = x3_coord[i]
             # Rotational variation for a cell
             if rotational_variation:
                 axis1 = np.random.rand(3)-0.5
@@ -230,7 +231,7 @@ class vector(object):
                 #--> shape of (3, 3)
                 R = get_new_axis(axis1, axis2)
                 rot_mat.append(R)
-                x3_coord_i = (R @ x3_coord[i].T).T
+                x3_coord_i = (R @ x3_coord_i.T).T
 
             #### Get fingerprint for one image
             fgpt_i       = []
@@ -352,9 +353,9 @@ class vector(object):
         #   types      --> (len_atoms)
         #   types_chem --> (len_atoms)
         if rotational_variation:
-            return np.array(fgpt, dtype=self.dtype), np.array(fgpt_deriv, dtype=self.dtype), np.array(neigh_ind, dtype=int), \
+            return np.array(fgpt, dtype=self.dtype), np.array(fgpt_deriv, dtype=self.dtype), np.array(neigh_ind, dtype=np.int32), \
                    np.array(rot_mat, dtype=self.dtype), types, types_chem
         else:
-            return np.array(fgpt, dtype=self.dtype), np.array(fgpt_deriv, dtype=self.dtype), np.array(neigh_ind, dtype=int), \
+            return np.array(fgpt, dtype=self.dtype), np.array(fgpt_deriv, dtype=self.dtype), np.array(neigh_ind, dtype=np.int32), \
                    types, types_chem
 

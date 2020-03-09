@@ -34,10 +34,10 @@ except:
         'ConvNet',
         dscrptr,
         # hl_node_num_list = [25, 25, 25, 25],
-        len_filter_list    = [  12,   6,   2],
+        len_filter_list    = [  12,   7,   5],
         num_channel_list   = [  15,  30,  60],
-        pooling_bool       = True,
-        act_ftn  = 
+        pooling_bool       = False,
+        act_ftn            =
         # tf.nn.relu,
         # tf.nn.tanh,
         tf.sin,
@@ -59,7 +59,7 @@ NN.train_f(
     start_lr     = 1e-3,
     load_ckpt    = 'latest',
     # load_ckpt    = False,
-    batch_size   = 100,
+    batch_size   = 20,
     load_fgpts   = True,
     e_ratio      = 1e-0,
     f_ratio      = 1e-0,
