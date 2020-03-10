@@ -1,3 +1,5 @@
+# import os
+# os.environ['TF_CPP_MIN_VLOG_LEVEL']='3'
 import tensorflow as tf
 from ss_util import Logger, nospace
 import numpy as np
@@ -281,7 +283,7 @@ class NN_force(object):
         ###### defining self params
         self.log_f            = log_f
         self.log              = Logger(log_f)
-        self.dtype            = 'float64'
+        self.dtype            = 'float32'
         self.npy_path         = 'npys'
         self.fgpt_path        = 'fgpts'
         self.save_path        = 'saved_ckpts'
@@ -565,8 +567,8 @@ class NN_force(object):
             valid_fgpts       = np.load(fgpt_path+'/validation/fgpts.npy').astype(dtype)
             train_fgpts_deriv = np.load(fgpt_path+'/training/fgpts_deriv.npy').astype(dtype)
             valid_fgpts_deriv = np.load(fgpt_path+'/validation/fgpts_deriv.npy').astype(dtype)
-            train_neigh_ind   = np.load(fgpt_path+'/training/neigh_ind.npy').astype(int)
-            valid_neigh_ind   = np.load(fgpt_path+'/validation/neigh_ind.npy').astype(int)
+            train_neigh_ind   = np.load(fgpt_path+'/training/neigh_ind.npy').astype(np.int32)
+            valid_neigh_ind   = np.load(fgpt_path+'/validation/neigh_ind.npy').astype(np.int32)
             train_rot_mat     = np.load(fgpt_path+'/training/rot_mat.npy').astype(dtype)
             valid_rot_mat     = np.load(fgpt_path+'/validation/rot_mat.npy').astype(dtype)
             with open(fgpt_path+'/dscrptr.pckl', 'rb') as f:
@@ -871,7 +873,7 @@ class NN_force(object):
             elif isinstance(load_ckpt, str):
                 if not tf.train.checkpoint_exists(load_ckpt):
                     load_ckpt = False
-            if load_ckpt:
+            if load_ckpt and load_fgpts:
                 log(load_ckpt)
                 saver.restore(sess, load_ckpt)
                 log('Variables successfully loaded!')

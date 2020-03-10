@@ -1,7 +1,7 @@
 import numpy as np
 from ss_util import Logger, nospace
 
-def get_new_axis(axis1, axis2, dtype='float64'):
+def get_new_axis(axis1, axis2, dtype='float32'):
     """
     Return three dimensional axis vectors with unit size.
     Axis1 will be new x1 coord.
@@ -44,7 +44,7 @@ def read_alist(alist):
 def make_x3_supercell(
     box,
     coord,
-    dtype='float64',
+    dtype='float32',
     ):
     """
     Make input cell as 3x3x3 supercell.
@@ -96,7 +96,7 @@ class vector(object):
         num_cutoff,
         multipole_order = ['r', 2,],
         logfile_name    = 'log.txt',
-        dtype           = 'float64',
+        dtype           = 'float32',
         ):
         """
 
@@ -212,7 +212,7 @@ class vector(object):
                 '\n*** cutoff_radi must be lower than ({}) considering all the box size.'
                 .format(self.cutoff_radi, max_cutoff)
                 )
-            self.log(message, nospace=True)
+            self.log(message, no_space=True)
             raise ValueError(message)
 
         self.log('Getting fgpts...', tic='gen_fgpts', no_space=True)
@@ -283,7 +283,7 @@ class vector(object):
                         'i.e. maximum radius[{},{}] (== {}) < cutoff_radi (== {})'
                         .format(i, origin_atom, i, origin_atom, max_radi[-1], self.cutoff_radi)
                         )
-                    self.log(message, nospace=True)
+                    self.log(message, no_space=True)
                     raise ValueError(message)
 
                 #### Gatherings (atoms)
