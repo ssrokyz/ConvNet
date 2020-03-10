@@ -410,37 +410,37 @@ class NN_force(object):
         f_self = -tf.reduce_sum(F_ij, axis=2)
 
         # Second (cross) term of forces.
-
-        a_bool = tf.tile(
-            tf.expand_dims(
-                tf.equal(
+        a_bool = tf.equal(
+                    #--> shape of (num_batch, len_atoms, len_atoms, num_cutoff)
                     tf.tile(
                         tf.expand_dims(Neigh_ind, axis=1),
                         [1,len_atoms,1,1],
                         ),
                     tf.reshape(tf.range(len_atoms), [1,-1,1,1]),
-                    ),
-                axis=4,
-                ),
-            [1,1,1,1,3],
-            )
+                    )
 
-        f_cross = tf.reduce_sum(
-            tf.reshape(
-                tf.where(
-                    a_bool,
-                    tf.tile(
-                        tf.expand_dims(
-                            F_ij,
-                            axis=1,
+                # --> shape of (num_batch, len_atoms, 3)
+        f_cross = tf.sparse.to_dense(
+            tf.reduce_sum(
+                #--> shape of (num_batch, len_atoms, len_atoms, 3)
+                tf.reduce_sum(
+                    tf.ragged.boolean_mask(
+                        #--> shape of (num_batch, len_atoms, len_atoms, num_cutoff, 3)
+                        tf.tile(
+                            tf.expand_dims(
+                                F_ij,
+                                axis=1,
+                                ),
+                            [1,len_atoms,1,1,1],
                             ),
-                        [1,len_atoms,1,1,1],
+                        #--> shape of (num_batch, len_atoms, len_atoms, num_cutoff)
+                        a_bool,
+                        name='neigh_mask',
                         ),
-                    tf.zeros_like(a_bool, dtype=F_ij.dtype),
+                    axis=3,
                     ),
-                [-1, len_atoms, len_atoms *self.dscrptr.num_cutoff, 3],
-                ),
-            axis= 2,
+                axis=2,
+                ).to_sparse()
             )
 
         return tf.reshape(f_self + f_cross, [-1, 3])
