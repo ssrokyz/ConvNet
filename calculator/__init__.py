@@ -82,24 +82,21 @@ class ss_calc(Calculator, object):
 
         # Second (cross) term of forces.
         len_atoms = tf.shape(F_ij)[0]
-        a_bool = tf.tile(
-            tf.expand_dims(
-                tf.equal(
+        a_bool = tf.equal(
+                    #--> shape of (len_atoms, len_atoms, num_cutoff)
                     tf.tile(
                         tf.expand_dims(Neigh_ind, axis=0),
                         [len_atoms,1,1],
                         ),
-                    tf.reshape(tf.range(len_atoms),[len_atoms,1,1]),
-                    ),
-                axis=3,
-                ),
-            [1,1,1,3],
-            )
+                    tf.reshape(tf.range(len_atoms), [len_atoms,1,1]),
+                    )
 
+                # --> shape of (len_atoms, 3)
         f_cross = tf.reduce_sum(
-            tf.reshape(
-                tf.where(
-                    a_bool,
+            #--> shape of (len_atoms, len_atoms, 3)
+            tf.reduce_sum(
+                tf.ragged.boolean_mask(
+                    #--> shape of (len_atoms, len_atoms, num_cutoff, 3)
                     tf.tile(
                         tf.expand_dims(
                             F_ij,
@@ -107,26 +104,16 @@ class ss_calc(Calculator, object):
                             ),
                         [len_atoms,1,1,1],
                         ),
-                    tf.zeros_like(a_bool, dtype=F_ij.dtype),
+                    #--> shape of (len_atoms, len_atoms, num_cutoff)
+                    a_bool,
+                    name='neigh_mask',
                     ),
-                [len_atoms, len_atoms *self.model.dscrptr.num_cutoff, 3],
+                axis=2,
                 ),
-            axis= 1,
+            axis=1,
             )
 
         return tf.reshape(f_self + f_cross, [-1, 3])
-
-        # F = 2. * tf.matmul(
-            # tf.reshape(tf.concat(
-                # self.X_deriv,
-                # axis=0,
-                # ), [-1,3,self.model.dscrptr.len_fgpt]),
-            # tf.reshape(tf.concat(
-                # [tf.gradients(self.OL[spec], self.X[spec])[0] for spec in self.model.dscrptr.type_unique],
-                # axis=0,
-                # ), [-1,self.model.dscrptr.len_fgpt,1]),
-            # )
-        # return tf.reshape(F, [-1, 3])
 
     def calculate(
         self,
@@ -183,5 +170,5 @@ class ss_calc(Calculator, object):
 
         # Save results
         self.results['atomic_energies'] = atomic_energies
-        self.results['energy']          = np.sum(atomic_energies)
+        self.results['energy']          = float(np.sum(atomic_energies))
         self.results['forces']          = forces

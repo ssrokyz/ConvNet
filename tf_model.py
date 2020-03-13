@@ -411,13 +411,13 @@ class NN_force(object):
 
         # Second (cross) term of forces.
         a_bool = tf.equal(
-                    #--> shape of (num_batch, len_atoms, len_atoms, num_cutoff)
-                    tf.tile(
-                        tf.expand_dims(Neigh_ind, axis=1),
-                        [1,len_atoms,1,1],
-                        ),
-                    tf.reshape(tf.range(len_atoms), [1,-1,1,1]),
-                    )
+            #--> shape of (num_batch, len_atoms, len_atoms, num_cutoff)
+            tf.tile(
+                tf.expand_dims(Neigh_ind, axis=1),
+                [1,len_atoms,1,1],
+                ),
+            tf.reshape(tf.range(len_atoms), [1,len_atoms,1,1]),
+            )
 
                 # --> shape of (num_batch, len_atoms, 3)
         f_cross = tf.sparse.to_dense(
@@ -445,40 +445,6 @@ class NN_force(object):
 
         return tf.reshape(f_self + f_cross, [-1, 3])
 
-        # #--> shape of (len_atoms, num_batch, 3)
-        # f_cross = []
-        # for a in range(len_atoms):
-            # #--> shape of (num_batch, len_atoms, num_cutoff, 3)
-            # a_bool = tf.tile(tf.expand_dims(tf.equal(Neigh_ind, a), axis=3), [1,1,1,3])
-
-                        # #  --> shape of (num_batch, 3)
-            # f_cross.append(tf.reduce_sum(
-                # tf.reshape(
-                    # # #--> shape of (num_batch, num_cutoff, num_cutoff, 3)
-                    # # tf.batch_gather(
-                        # # #--> shape of (num_batch, len_atoms, num_cutoff, 3)
-                        # # tf.where(
-                            # # a_bool,
-                            # # F_ij,
-                            # # tf.zeros_like(F_ij),
-                            # # ),
-                        # # #--> shape of (num_batch, num_cutoff)
-                        # # Neigh_ind[:, a],
-                        # # ),
-                    # tf.where(
-                        # a_bool,
-                        # F_ij,
-                        # tf.zeros_like(F_ij),
-                        # ),
-                    # [-1, len_atoms* self.dscrptr.num_cutoff, 3],
-                    # ),
-                # axis=1,
-                # ))
-           # # --> shape of (num_batch, len_atoms, 3) 
-        # F += tf.transpose(f_cross, perm=[1,0,2])
-
-        # return tf.reshape(F, [-1, 3])
-    
     def get_F_RMSE(
         self,
         X,

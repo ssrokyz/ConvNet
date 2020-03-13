@@ -5,13 +5,15 @@ from dscrptr import vector
 from tf_model import NN_force
 import tensorflow as tf
 
+# Load NN model
 import pickle as pckl
 with open('../saved_ckpts/model.pckl', 'rb') as f:
     nn_obj = pckl.load(f)
 
+# Load NN parameters
 from ase.io import read, write
 alist = read('small.traj', ':')
-calc = ss_calc(nn_obj, '../saved_ckpts/ConvNet.0445000')
+calc = ss_calc(nn_obj, '../saved_ckpts/ConvNet.0550000')
 new_alist = []
 import datetime
 for i in range(len(alist)):
