@@ -366,6 +366,7 @@ class NN_force(object):
         X_deriv,
         Neigh_ind,
         OL,
+        TAS_inv,
         len_inp,
         len_atoms,
         type_count,
@@ -388,10 +389,14 @@ class NN_force(object):
             # )
 
         ## New version
-        # Reorder Neigh_ind
+        # Reorder Neigh_ind and sort back to the original order.
         #--> shape of (num_batch, len_atoms, num_cutoff)
-        Neigh_ind = tf.concat(
-            [tf.reshape(Neigh_ind[spec], [-1, type_count[spec], self.dscrptr.num_cutoff]) for spec in self.dscrptr.type_unique],
+        Neigh_ind = tf.gather(
+            tf.concat(
+                [tf.reshape(Neigh_ind[spec], [-1, type_count[spec], self.dscrptr.num_cutoff]) for spec in self.dscrptr.type_unique],
+                axis=1,
+                ),
+            TAS_inv,
             axis=1,
             )
 
@@ -403,7 +408,11 @@ class NN_force(object):
                 tf.reshape(tf.gradients(OL[spec], X[spec])[0], [-1, self.n_inp_channel, 1]),
                 ), [-1, type_count[spec], self.dscrptr.num_cutoff, 3]))
         #--> shape of (num_batch, len_atoms, num_cutoff, 3)
-        F_ij = tf.concat(F_ij, axis=1)
+        F_ij = tf.gather(
+            tf.concat(F_ij, axis=1),
+            TAS_inv,
+            axis=1,
+            )
 
         # First (self) term of forces.
         #--> shape of (num_batch, len_atoms, 3)
@@ -451,6 +460,7 @@ class NN_force(object):
         X_deriv,
         Neigh_ind,
         OL,
+        TAS_inv,
         F_hat,
         len_inp,
         len_atoms,
@@ -458,8 +468,12 @@ class NN_force(object):
         ):
 
         # Reorder F_hat
-        F_hat = tf.concat(
-            [tf.reshape(F_hat[spec], [-1, type_count[spec], 3]) for spec in self.dscrptr.type_unique],
+        F_hat = tf.gather(
+            tf.concat(
+                [tf.reshape(F_hat[spec], [-1, type_count[spec], 3]) for spec in self.dscrptr.type_unique],
+                axis=1,
+                ),
+            TAS_inv,
             axis=1,
             )
 
@@ -471,6 +485,7 @@ class NN_force(object):
                 X_deriv,
                 Neigh_ind,
                 OL,
+                TAS_inv,
                 len_inp,
                 len_atoms,
                 type_count,
@@ -625,9 +640,10 @@ class NN_force(object):
             Neigh_ind.append(tf.placeholder('int32', name='Neigh_ind_'+str(spec)))
             X_deriv  .append(tf.placeholder(dtype, name='X_deriv_'+str(spec)))
             F        .append(tf.placeholder(dtype, name='F_'+str(spec)))
-        E = tf.placeholder(dtype, name='E')
+        TAS_inv   = tf.placeholder('int32', name = 'TAS_inv')
+        E         = tf.placeholder(dtype, name   = 'E')
 
-        return X, X_deriv, Neigh_ind, OL, F, E, DR
+        return X, X_deriv, Neigh_ind, OL, F, E, TAS_inv, DR
 
     def train_f(
         self,
@@ -701,9 +717,7 @@ class NN_force(object):
         if not load_fgpts:
             train_fgpts, valid_fgpts, train_fgpts_deriv, valid_fgpts_deriv, train_neigh_ind, valid_neigh_ind, \
             train_rot_mat, valid_rot_mat, types, types_chem = self.make_fgpts()
-        #### types
-        type_unique, type_count = np.unique(types, return_counts=True)
-        ####
+        #
         t_fgpts_shape = train_fgpts.shape
         len_valid = len(valid_fgpts)
         len_atoms = t_fgpts_shape[1]
@@ -713,6 +727,14 @@ class NN_force(object):
         self.len_inp = len_inp
         self.n_inp_channel = n_inp_channel
         self.len_out = len_out
+        # types
+        type_unique, type_count = np.unique(types, return_counts = True)
+        type_argsort = []
+        for spec in type_unique:
+            type_argsort += list(np.arange(len_atoms)[types == spec])
+        type_argsort_inv = np.zeros(len_atoms, dtype='int32')
+        type_argsort_inv[type_argsort] = np.arange(len_atoms, dtype = 'int32')
+
 
         ### fgpt log
         log('   _____________Fgpt global variables___(...Check carefully...)___________\n')
@@ -775,7 +797,7 @@ class NN_force(object):
         # Build model
         log('=============================================================================================='.center(120))
         log('>>>>>>>>>>>>>>>>>>>>>>>>>>>      Constructing the NN model       <<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.center(120))
-        X, X_deriv, Neigh_ind, OL, F, E, DR = self.build_nn()
+        X, X_deriv, Neigh_ind, OL, F, E, TAS_inv, DR = self.build_nn()
         log('>>>>>>>>>>>>>>>>>>>>>>>>>>>        Construction complete!        <<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.center(120))
         log('=============================================================================================='.center(120))
 
@@ -788,7 +810,7 @@ class NN_force(object):
 
         #### Loss functions & RMSEs
         e_rmse    = self.get_E_RMSE(OL, E, len_atoms, type_count)
-        f_rmse    = self.get_F_RMSE(X, X_deriv, Neigh_ind, OL, F, len_inp, len_atoms, type_count)
+        f_rmse    = self.get_F_RMSE(X, X_deriv, Neigh_ind, OL, TAS_inv, F, len_inp, len_atoms, type_count)
         # loss    = tf.add_n([
             # e_ratio * e_rmse,
             # f_ratio * f_rmse,
@@ -948,6 +970,7 @@ class NN_force(object):
                                               + list(zip(Neigh_ind, valid_neigh_ind_spec  )) \
                                               +     [   (E        , valid_e               )] \
                                               + list(zip(F        , valid_f_spec          )) \
+                                              +     [   (TAS_inv  , type_argsort_inv      )] \
                                               +     [   (DR       , dropout_rate          )]},
                     )
                 v_wo_loss = sess.run(
@@ -957,6 +980,7 @@ class NN_force(object):
                                               + list(zip(Neigh_ind, valid_neigh_ind_spec  )) \
                                               +     [   (E        , valid_e               )] \
                                               + list(zip(F        , valid_f_spec          )) \
+                                              +     [   (TAS_inv  , type_argsort_inv      )] \
                                               +     [   (DR       , 1.0                   )]},
                     )
                 # # For test purpose
@@ -983,6 +1007,7 @@ class NN_force(object):
                                               + list(zip(Neigh_ind, valid_neigh_ind_spec  )) \
                                               +     [   (E        , valid_e               )] \
                                               + list(zip(F        , valid_f_spec          )) \
+                                              +     [   (TAS_inv  , type_argsort_inv      )] \
                                               +     [   (DR       , 1.0                   )]},
                     )
                 toc = time.time()
@@ -1037,6 +1062,7 @@ class NN_force(object):
                                             + list(zip(Neigh_ind, batch_neigh_ind_i  )) \
                                             +     [   (E        , batch_e_i          )] \
                                             + list(zip(F        , batch_f_i          )) \
+                                            +     [   (TAS_inv  , type_argsort_inv   )] \
                                             +     [   (DR       , dropout_rate       )]},
                                             )
 
