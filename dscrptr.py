@@ -4,7 +4,7 @@ from ss_util import Logger, nospace
 def get_new_axis(axis1, axis2, dtype='float32'):
     """
     Return three dimensional axis vectors with unit size.
-    Axis1 will be new x1 coord.
+    axis1 will be new x1 axis.
     """
     axis3 = np.cross(axis1, axis2)
     axis1 = np.array(axis1) / np.linalg.norm(axis1)
@@ -41,39 +41,38 @@ def read_alist(alist):
     types       = np.array(l2nl(list(types_chem)), dtype='int32')
     return box, coord, types, types_chem
 
-def make_x3_supercell(
+def make_x2_supercell(
     box,
     coord,
     dtype='float32',
     ):
     """
-    Make input cell as 3x3x3 supercell.
+    Make input cell as 2x2x2 supercell.
     box (arr)   = shape of (len_alist, 3, 3)
     coord (arr) = shape of (len_alist, len_atoms, 3)
     """
-    x3_supercell = []
+    # Make box
+    x2_box   = []
+    x2_coord = []
     for i in range(len(box)):
-        x3_supercell_i = []
-        for G_z in [-1,0,1]:
-            for G_y in [-1,0,1]:
-                for G_x in [-1,0,1]:
-                    G = np.array([[G_x], [G_y], [G_z]], dtype='int32')
-                    #--> shape of (3, 3)
-                    d_R = box[i] * G
-                    #--> shape of (3,)
-                    d_r = np.array(np.sum(d_R, axis=0), dtype=dtype)
-                                       #  --> shape of (len_atoms, 3)
-                    x3_supercell_i.extend(coord[i] + d_r)
-                                  #  --> shape of (27*len_atoms, 3)
-        x3_supercell.append(np.array(x3_supercell_i, dtype=dtype))
-    # Return shape of (len_alist, 27*len_atoms, 3)
-    return np.array(x3_supercell, dtype=dtype)
+        x2_coord_i = []
+        for G_z in range(2):
+            for G_y in range(2):
+                for G_x in range(2):
+                    G = np.array([G_x, G_y, G_z], dtype='int32')
+                    #                 --> shape of (len_atoms, 3)
+                    x2_coord_i.extend(coord[i] + G)
+        #               --> shape of (8*len_atoms, 3)
+        x2_coord.append(np.array(x2_coord_i, dtype=dtype) / 2.)
+        x2_box.append(box[i] * 2.)
+    # Return shape of (len_alist, 8*len_atoms, 3)
+    return np.array(x2_box, dtype=dtype), np.array(x2_coord, dtype=dtype)
 
 def get_max_cutoff(
     box,
     ):
     """
-    Minimum value of inter-plane distance is max cutoff length.
+    (Minimum value of inter-plane distance) / 2. == max cutoff length.
     """
     cutoff_list = []
     for i in range(len(box)):
@@ -83,7 +82,7 @@ def get_max_cutoff(
         d2 = vol / np.linalg.norm(np.cross(lattice[2],lattice[0]))
         d3 = vol / np.linalg.norm(np.cross(lattice[0],lattice[1]))
         cutoff_list.append(np.amin([d1, d2, d3]))
-    return np.amin(cutoff_list)
+    return np.amin(cutoff_list) / 2.
 
 class vector(object):
     """ 
@@ -92,7 +91,6 @@ class vector(object):
     def __init__(
         self,
         num_kind,
-        cutoff_radi,
         num_cutoff,
         multipole_order = ['r', 2,],
         logfile_name    = 'log.txt',
@@ -114,7 +112,6 @@ class vector(object):
             self.len_dscrptr = 3 * len(multipole_order) + 1
 
         # defining self params
-        self.cutoff_radi     = np.array(cutoff_radi, dtype = dtype)
         self.num_cutoff      = np.array(num_cutoff, dtype = 'int32')
         self.multipole_order = list(multipole_order)
         self.type_unique     = list(range(num_kind))
@@ -186,6 +183,7 @@ class vector(object):
         self,
         npy_path_or_list,
         rotational_variation=False,
+        allow_supercell=False,
         ):
         """
         Generate fgpts and fgpt_derivs.
@@ -199,21 +197,36 @@ class vector(object):
             box, coord, types, types_chem = read_npy(npy_path_or_list)
         (len_alist, len_atoms) = coord.shape[0:2]
 
-        #--> shape of (len_alist, 27*len_atoms, 3)
-        x3_coord = make_x3_supercell(box, coord)
+        ## Check the system's validity
         max_cutoff = get_max_cutoff(box)
-        self.log(' >>> Requirement) cutoff_radi < (maximal cutoff) <<<', no_space=True)
-        self.log('*** cutoff_radi = {}'.format(self.cutoff_radi), no_space=True)
-        self.log('*** cutoff_radi must be lower than ({}) considering all the box size.'.format(max_cutoff), no_space=True)
-        if self.cutoff_radi > max_cutoff:
+        self.log('\n >>> Recommendation) "min(max(r) in a fgpt) in the training set" < min(interplane distances)/2. <<<', no_space=True)
+        self.log('*** min(interplane distance) / 2. == ({}) (calculated by all the boxes.)'.format(max_cutoff), no_space=True)
+        # Check system size.
+        supercell_tile = 1
+        if len_atoms < self.num_cutoff and self.num_cutoff < 8*len_atoms and allow_supercell:
             message = (
-                'Error) cutoff radius is too big compared to the cell size'
-                '\n*** cutoff_radi = {}'
-                '\n*** cutoff_radi must be lower than ({}) considering all the box size.'
-                .format(self.cutoff_radi, max_cutoff)
+                '\nWarning) The size of systems is too small when compared with the num_cutoff.'
+                '\n*** num_cutoff == {}'
+                '\n*** len_atoms == {}'
+                '\n*** I will make fgpts after the systems are supercelled (2x2x2, i.e. 8 times).'
+                '\n*** Must consider the consequencies.'
+                .format(self.num_cutoff, len_atoms)
                 )
             self.log(message, no_space=True)
-            raise ValueError(message)
+            supercell_tile = 8
+        elif len_atoms < self.num_cutoff and not allow_supercell:
+            message = (
+                '\nError) The size of systems is too small when considered to the num_cutoff.'
+                '\n*** num_cutoff == {}'
+                '\n*** len_atoms == {}'
+                '\n*** {num_cutoff < 8*len_atoms} must be satisfied.'
+                '\n*** You can trick it by making training sets as their supercells.'
+                .format(self.num_cutoff, len_atoms)
+                )
+            if not allow_supercell:
+                message += '\n*** Or {allow_supercell=True} would solve the problem.'
+            self.log(message, no_space=True)
+            raise RuntimeError(message)
 
         self.log('Getting fgpts...', tic='gen_fgpts', no_space=True)
         #### Get Fgpts & its Derivs.
@@ -222,8 +235,15 @@ class vector(object):
         neigh_ind  = []
         rot_mat    = []
         max_radi   = []
+        if supercell_tile != 1:
+            box, coord = make_x2_supercell(box, coord)
+        # from time import time
+        # time_ref = time()
         for i in range(len_alist):
-            x3_coord_i = x3_coord[i]
+            # print('_{} {}'.format(i, time() - time_ref))
+            # time_ref = time()
+            box_i   = box[i]
+            coord_i = coord[i]
             # Rotational variation for a cell
             if rotational_variation:
                 axis1 = np.random.rand(3)-0.5
@@ -231,7 +251,7 @@ class vector(object):
                 #--> shape of (3, 3)
                 R = get_new_axis(axis1, axis2)
                 rot_mat.append(R)
-                x3_coord_i = (R @ x3_coord_i.T).T
+                box_i = (box_i @ R.T)
 
             #### Get fingerprint for one image
             fgpt_i       = []
@@ -239,28 +259,29 @@ class vector(object):
             neigh_ind_i  = []
             for origin_atom in range(len_atoms):
                 #### Get fingerprint of one atom in an image
-                # Get relative coordinates
-                #--> shape of (27*len_atoms, 3)
-                #                  --> shape of (27*len_atoms, 3)
-                rel_x3_coord_tmp = x3_coord_i - x3_coord_i[13*len_atoms + origin_atom]
-                #--> shape of (27*len_atoms, 1)
+                # Get relative coordinates in xyz coord.
+                # And let origin_atom be at the center of the cell.
+                #--> shape of (len_atoms, 3)
+                rel_coord = ((coord_i - coord_i[origin_atom] + \
+                    np.array([0.5, 0.5, 0.5], dtype=self.dtype)) % 1.0 - np.array([0.5, 0.5, 0.5])) @ box_i
+                #--> shape of (len_atoms, 1)
                 dist_vec = np.expand_dims(
-                    np.linalg.norm(rel_x3_coord_tmp, axis=1),
+                    np.linalg.norm(rel_coord, axis=1),
                     axis=1,
                     )
-                #--> shape of (27*len_atoms, 6) c.f. second axis: (x, y, z, r, type, ind)
-                Rx3CT_concate = np.concatenate(
+                #--> shape of (len_atoms, 6) c.f. second axis: (x, y, z, r, type, ind)
+                prop_concat = np.concatenate(
                     (
-                        rel_x3_coord_tmp,
+                        rel_coord,
                         dist_vec,
-                        #--> shape of (27*len_atoms, 1)
+                        #--> shape of (len_atoms, 1)
                         np.expand_dims(
-                            np.array(np.tile(types, 27), dtype=self.dtype),
+                            np.tile(types, [supercell_tile]),
                             axis=1,
                             ),
-                        #--> shape of (27*len_atoms, 1)
+                        #--> shape of (len_atoms, 1)
                         np.expand_dims(
-                            list(range(len_atoms))*27,
+                            list(range(len_atoms))*supercell_tile,
                             axis=1,
                             ),
                         ),
@@ -268,23 +289,12 @@ class vector(object):
                     )
 
                 # Sort in distance order
-                Rx3CT_concate = Rx3CT_concate[Rx3CT_concate[:,3].argsort()]
+                prop_concat = prop_concat[prop_concat[:,3].argsort()]
 
                 # Throw away center atom
                 #--> shape of (num_cutoff, 6)
-                Rx3CT_concate = Rx3CT_concate[range(1, self.num_cutoff+1)]
-                max_radi.append(Rx3CT_concate[-1,3])
-
-                # Raise error if given cutoff radius is not sufficient.
-                if max_radi[-1] < self.cutoff_radi:
-                    message = (
-                        'Local environment of {}-th atom of {}-th image'
-                        ' --> num_cutoff is not sufficiently high about cutoff_radi you gave\n '
-                        'i.e. maximum radius[{},{}] (== {}) < cutoff_radi (== {})'
-                        .format(i, origin_atom, i, origin_atom, max_radi[-1], self.cutoff_radi)
-                        )
-                    self.log(message, no_space=True)
-                    raise ValueError(message)
+                prop_concat = prop_concat[range(1, self.num_cutoff+1)]
+                max_radi.append(prop_concat[-1,3])
 
                 #### Gatherings (atoms)
                 # Gather fgpts
@@ -294,11 +304,11 @@ class vector(object):
                     np.concatenate(
                         (
                             #--> shape of (num_cutoff, 1)
-                            np.expand_dims(Rx3CT_concate[:,4], axis=1),
+                            np.expand_dims(prop_concat[:,4], axis=1),
                             #--> shape of (num_cutoff, len_dscrptr -1)
                             self.get_multipole_fgpt(
-                                Rx3CT_concate[:,0:3],
-                                np.expand_dims(Rx3CT_concate[:,3], axis=1),
+                                prop_concat[:,0:3],
+                                np.expand_dims(prop_concat[:,3], axis=1),
                                 ),
                             ),
                         axis=1,
@@ -308,7 +318,7 @@ class vector(object):
                 # Gather neighbor list
                 neigh_ind_i.append(
                     #--> shape of (num_cutoff,)
-                    Rx3CT_concate[:,5]
+                    prop_concat[:,5]
                     )
                 
                 # Gather fgpt_derivs
@@ -325,8 +335,8 @@ class vector(object):
                                 ),
                             #--> shape of (num_cutoff, 3, len_dscrptr -1)
                             self.get_multipole_fgpt_deriv(
-                                Rx3CT_concate[:,0:3],
-                                np.expand_dims(Rx3CT_concate[:,3], axis=1),
+                                prop_concat[:,0:3],
+                                np.expand_dims(prop_concat[:,3], axis=1),
                                 ),
                             ),
                         axis=2,
@@ -340,11 +350,16 @@ class vector(object):
 
         min_max_radi = np.amin(max_radi)
         self.log('got fgpts...', toc='gen_fgpts', no_space=True)
-        self.log(' >>> Requirement) min(maximum radius) > cutoff_radi <<<', no_space=True)
-        self.log('====================================================', no_space=True)
-        self.log('*** min(maximum radius) (== {})'.format(min_max_radi), no_space=True)
-        self.log('*** cutoff_radi (== {})'.format(self.cutoff_radi), no_space=True)
-        self.log('====================================================\n', no_space=True)
+        self.log(' >>> Check carefully) min(max(r) in a fgpt) in the training set is... <<<', no_space=True)
+        self.log('=================================================================', no_space=True)
+        self.log('*** min(max(r)) == {}'.format(min_max_radi), no_space=True)
+        self.log('*** Reminder) min(interplane distance) / 2. == ({})'.format(max_cutoff), no_space=True)
+        if min_max_radi > max_cutoff:
+            self.log('      !!WARNING!!', no_space=True)
+            self.log('*** Are you sure it is sufficiently high?', no_space=True)
+            self.log('*** If not, bring the training set of bigger systems.', no_space=True)
+            self.log('*** We recommend { min(max(r)) < min(interplane distance) / 2. }', no_space=True)
+        self.log('=================================================================\n', no_space=True)
         # Output shapes
         #   fgpt       --> (len_alist, len_atoms, num_cutoff, len_dscrptr)
         #   fgpt_deriv --> (len_alist, len_atoms, num_cutoff, 3, len_dscrptr)

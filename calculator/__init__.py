@@ -24,10 +24,12 @@ class ss_calc(Calculator, object):
             - (str)    Path to the saved model in pickle format.
             - (object) Object of one of these classes: (NN_force, ). Must have same training parameters used to make the var_ckpt file.
         var_ckpt (str) - Tensorflow variables checkpoint file.
-        big_sys (bool) - To save system memory, set 'True'.
-                         But for small systems, 'False' might give the wrong results.
-                         Recomandation) No a duplication of index in Neigh_ind for a atom. (Typically, more than 100 atoms) --> True
-                                        There are duplications.                            (Typically, less than 100 atoms) --> False
+        big_sys (bool) - If you wanna predict big system and save system memory, set 'True'.
+                         But for small systems, 'True' might give the wrong results.
+                         Recommendation) If there is no a duplication of atomic index in Neigh_ind for any atom. 
+                                          (Typically, {len(atoms) > 2* num_cutoff}, then, --> True
+                                         If there are duplications.                                     
+                                          (Typically, {len(atoms) < 2* num_cutoff}, then, --> False
         """
 
         # Initialize
@@ -79,7 +81,10 @@ class ss_calc(Calculator, object):
                 tf.reshape(tf.gradients(self.OL[spec], self.X[spec])[0], [-1, self.model.dscrptr.len_dscrptr, 1]),
                 ), [-1, self.model.dscrptr.num_cutoff, 3]))
         #--> shape of (len_atoms, num_cutoff, 3)
-        F_ij = tf.gather(tf.concat(F_ij, axis=0), self.TAS_inv)
+        F_ij = tf.gather(
+            tf.concat(F_ij, axis=0),
+            self.TAS_inv,
+            )
 
         # First (self) term of forces.
         #--> shape of (len_atoms, 3)
@@ -124,13 +129,13 @@ class ss_calc(Calculator, object):
         # Accurate for small systems. (Typically, less than 100 atoms.)
         else:
             a_bool = tf.equal(
-                        #--> shape of (len_atoms, len_atoms, num_cutoff)
-                        tf.tile(
-                            tf.expand_dims(Neigh_ind, axis=0),
-                            [len_atoms,1,1],
-                            ),
-                        tf.reshape(tf.range(len_atoms), [len_atoms,1,1]),
-                        )
+                #--> shape of (len_atoms, len_atoms, num_cutoff)
+                tf.tile(
+                    tf.expand_dims(Neigh_ind, axis=0),
+                    [len_atoms,1,1],
+                    ),
+                tf.reshape(tf.range(len_atoms), [len_atoms,1,1]),
+                )
 
                     # --> shape of (len_atoms, 3)
             f_cross = tf.reduce_sum(
@@ -170,7 +175,7 @@ class ss_calc(Calculator, object):
         Calculator.calculate(self, atoms, properties, system_changes)
 
         # Get fgpt and fgpt derivative.
-        fgpt, fgpt_deriv, neigh_ind, types, types_chem = self.model.dscrptr.gen_fgpts([atoms]) 
+        fgpt, fgpt_deriv, neigh_ind, types, types_chem = self.model.dscrptr.gen_fgpts([atoms], allow_supercell=True) 
 
         # You have only one image here. Remove outmost shell.
         fgpt       = fgpt[0]

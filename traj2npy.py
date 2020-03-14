@@ -22,10 +22,6 @@ def alist2numpy(alist):
     else:
         (e_info, f_info, s_info) = (False, False, False)
 
-    # Wrap the atoms first.
-    from ase_wrap import wrap_alist
-    alist = wrap_alist(alist)
-
     #
     box = []
     coord = []
@@ -35,47 +31,47 @@ def alist2numpy(alist):
     if e_info and f_info and s_info:
         for atoms in alist:
             box.append(np.array(atoms.get_cell(), dtype='float64'))
-            coord.append(np.array(atoms.get_positions(), dtype='float64'))
+            coord.append(np.array(atoms.get_scaled_positions(), dtype='float64'))
             energy.append(atoms.get_potential_energy())
             force.append(np.array(atoms.get_forces(), dtype='float64'))
             stress.append(np.array(atoms.get_stress(), dtype='float64'))
     elif e_info and f_info and not s_info:
         for atoms in alist:
             box.append(np.array(atoms.get_cell(), dtype='float64'))
-            coord.append(np.array(atoms.get_positions(), dtype='float64'))
+            coord.append(np.array(atoms.get_scaled_positions(), dtype='float64'))
             energy.append(atoms.get_potential_energy())
             force.append(np.array(atoms.get_forces(), dtype='float64'))
     elif e_info and not f_info and s_info:
         for atoms in alist:
             box.append(np.array(atoms.get_cell(), dtype='float64'))
-            coord.append(np.array(atoms.get_positions(), dtype='float64'))
+            coord.append(np.array(atoms.get_scaled_positions(), dtype='float64'))
             energy.append(atoms.get_potential_energy())
             stress.append(np.array(atoms.get_stress(), dtype='float64'))
     elif e_info and not f_info and not s_info:
         for atoms in alist:
             box.append(np.array(atoms.get_cell(), dtype='float64'))
-            coord.append(np.array(atoms.get_positions(), dtype='float64'))
+            coord.append(np.array(atoms.get_scaled_positions(), dtype='float64'))
             energy.append(atoms.get_potential_energy())
     elif not e_info and f_info and s_info:
         for atoms in alist:
             box.append(np.array(atoms.get_cell(), dtype='float64'))
-            coord.append(np.array(atoms.get_positions(), dtype='float64'))
+            coord.append(np.array(atoms.get_scaled_positions(), dtype='float64'))
             force.append(np.array(atoms.get_forces(), dtype='float64'))
             stress.append(np.array(atoms.get_stress(), dtype='float64'))
     elif not e_info and f_info and not s_info:
         for atoms in alist:
             box.append(np.array(atoms.get_cell(), dtype='float64'))
-            coord.append(np.array(atoms.get_positions(), dtype='float64'))
+            coord.append(np.array(atoms.get_scaled_positions(), dtype='float64'))
             force.append(np.array(atoms.get_forces(), dtype='float64'))
     elif not e_info and not f_info and s_info:
         for atoms in alist:
             box.append(np.array(atoms.get_cell(), dtype='float64'))
-            coord.append(np.array(atoms.get_positions(), dtype='float64'))
+            coord.append(np.array(atoms.get_scaled_positions(), dtype='float64'))
             stress.append(np.array(atoms.get_stress(), dtype='float64'))
     elif not e_info and not f_info and not s_info:
         for atoms in alist:
             box.append(np.array(atoms.get_cell(), dtype='float64'))
-            coord.append(np.array(atoms.get_positions(), dtype='float64'))
+            coord.append(np.array(atoms.get_scaled_positions(), dtype='float64'))
     box = np.array(box, dtype='float64')
     coord = np.array(coord, dtype='float64')
     if e_info:

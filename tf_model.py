@@ -372,22 +372,6 @@ class NN_force(object):
         type_count,
         ):
 
-        # ## Original version
-        # X_deriv2 = []
-        # for spec in self.dscrptr.type_unique:
-            # X_deriv2.append(tf.reshape(tf.transpose(tf.reshape(X_deriv[spec], [-1, self.dscrptr.num_cutoff, 3, self.n_inp_channel]), perm=[0,2,1,3]), [-1, 3, len_inp]))
-
-        # F = -2. * tf.matmul(
-            # tf.reshape(tf.concat(
-                # X_deriv2,
-                # axis=0,
-                # ), [-1,3,len_inp]),
-            # tf.reshape(tf.concat(
-                # [tf.gradients(OL[spec], X[spec])[0] for spec in self.dscrptr.type_unique],
-                # axis=0,
-                # ), [-1,len_inp,1]),
-            # )
-
         ## New version
         # Reorder Neigh_ind and sort back to the original order.
         #--> shape of (num_batch, len_atoms, num_cutoff)
@@ -507,8 +491,16 @@ class NN_force(object):
         sp.call('mv {}/* old-{}'                      .format(fgpt_path, fgpt_path), shell=True)
         sp.call('mkdir -p {}/training/ {}/validation/'.format(fgpt_path, fgpt_path), shell=True)
 
-        train_fgpts, train_fgpts_deriv, train_neigh_ind, train_rot_mat, types, types_chem = dscrptr.gen_fgpts(npy_path+'/training', rotational_variation=True)
-        valid_fgpts, valid_fgpts_deriv, valid_neigh_ind, valid_rot_mat, types, types_chem = dscrptr.gen_fgpts(npy_path+'/validation', rotational_variation=True)
+        train_fgpts, train_fgpts_deriv, train_neigh_ind, train_rot_mat, types, types_chem = dscrptr.gen_fgpts(
+            npy_path+'/training',
+            rotational_variation=True,
+            allow_supercell=True,
+            )
+        valid_fgpts, valid_fgpts_deriv, valid_neigh_ind, valid_rot_mat, types, types_chem = dscrptr.gen_fgpts(
+            npy_path+'/validation',
+            rotational_variation=True,
+            allow_supercell=True,
+            )
 
         np.save(fgpt_path+'/training/fgpts.npy'         , train_fgpts)
         np.save(fgpt_path+'/validation/fgpts.npy'       , valid_fgpts)
@@ -521,7 +513,6 @@ class NN_force(object):
 
         # fgpt-log (Not the training log)
         with open(fgpt_path+'/log.txt', 'w') as txt:
-            txt.write('\ncutoff_radi     : '+str(dscrptr.cutoff_radi))
             txt.write('\nnum_cutoff      : '+str(dscrptr.num_cutoff))
             txt.write('\nmultipole_order : '+str(dscrptr.multipole_order))
             txt.write('\ntypes           : '+str(types))
@@ -571,7 +562,7 @@ class NN_force(object):
             log('\n')
             log('=========================================================================================================='.center(120))
             log('\n')
-            if not np.array_equal(dscrptr.cutoff_radi, self.dscrptr.cutoff_radi) or not np.array_equal(dscrptr.num_cutoff, self.dscrptr.num_cutoff) or not \
+            if not np.array_equal(dscrptr.num_cutoff, self.dscrptr.num_cutoff) or not \
                     np.array_equal(dscrptr.multipole_order, self.dscrptr.multipole_order):
                 log('xxxxxxxxxxxxxxxxxxxxx But it seems not consistent btw input options & saved fgpt files. Check and try again!!!! xxxxxxxxxxxxxxxxxxxx'.center(120))
                 raise ValueError('xxxxxxxxxxxxxxxxxxxxx But it seems not consistent btw input options & saved fgpt files. Check and try again!!!! xxxxxxxxxxxxxxxxxxxx')
@@ -738,7 +729,6 @@ class NN_force(object):
 
         ### fgpt log
         log('   _____________Fgpt global variables___(...Check carefully...)___________\n')
-        log(' >>>> '+nospace('cutoff_radi     ='+str(dscrptr.cutoff_radi)))
         log(' >>>> '+nospace('num_cutoff      ='+str(dscrptr.num_cutoff)))
         log(' >>>> '+nospace('multipole_order ='+str(dscrptr.multipole_order)))
         log('   _______________________________________________________________________\n\n')
